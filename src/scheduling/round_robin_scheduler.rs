@@ -1,27 +1,73 @@
+use crate::println;
+
 use super::*;
+use alloc::collections::BTreeMap;
 use core::arch::asm;
+use crossbeam_queue::ArrayQueue;
 use x86_64::{
     structures::idt::{InterruptStackFrame, InterruptStackFrameValue},
     VirtAddr,
 };
 
 pub struct RoundRobinScheduler {
-    current_task: Task,
+    current_task_id: TaskId,
+    tasks: BTreeMap<TaskId, Task>,
+    tasks_queue: ArrayQueue<TaskId>,
 }
 
 impl RoundRobinScheduler {
     pub fn init() -> Self {
-        Self {
-            current_task: Task {
+        let mut tasks = BTreeMap::new();
+        let id = TaskId::new();
+        tasks.insert(
+            id,
+            Task {
                 context: TaskContext::default(),
-                id: TaskId::new(),
             },
+        );
+        Self {
+            current_task_id: id,
+            tasks,
+            tasks_queue: ArrayQueue::new(100),
         }
     }
 
-    pub fn schedule(&mut self) {}
+    pub fn schedule(&mut self) {
+        if let Some(task_id) = self.tasks_queue.pop() {
+            // println!("{:?} -> {:?}", self.current_task_id, task_id);
+            self.tasks_queue.push(self.current_task_id).unwrap();
+            if self.tasks.get(&task_id).unwrap().context.rax == 0 {
+                let rip = self.tasks.get(&task_id).unwrap().context.rip;
+                self.tasks.get_mut(&task_id).unwrap().context = self
+                    .tasks
+                    .get(&self.current_task_id)
+                    .unwrap()
+                    .context
+                    .clone();
+                self.tasks.get_mut(&task_id).unwrap().context.rip = rip;
+            }
+            self.current_task_id = task_id;
+        }
+    }
+
+    pub fn spawn(&mut self, entry_point: fn()) {
+        let id = TaskId::new();
+        let mut context = TaskContext::default();
+        context.rip = entry_point as u64;
+        context.cs = 0x08;
+        context.rflags = 0x202;
+        // context.rsp = stack_addr;
+        // context.ss = 0x10;
+        let task = Task { context };
+
+        self.tasks.insert(id, task);
+        if let Err(_) = self.tasks_queue.push(id) {
+            panic!("task queue full");
+        }
+    }
 
     pub unsafe fn save_context(&mut self, stack_frame: &InterruptStackFrame) {
+        let current_task = self.tasks.get_mut(&self.current_task_id).unwrap();
         asm!(
             "mov [{0} + 0], rax",
             "mov [{0} + 8], rbx",
@@ -48,7 +94,7 @@ impl RoundRobinScheduler {
             // "mov [{0} + 144], rax",
             // "mov rax, {5}",
             // "mov [{0} + 148], rax",
-            in(reg) &mut self.current_task.context as *mut _ as usize,
+            in(reg) &mut current_task.context as *mut _ as usize,
             // in(reg) stack_frame.instruction_pointer.as_u64(),
             // in(reg) stack_frame.code_segment,
             // in(reg) stack_frame.cpu_flags,
@@ -56,23 +102,28 @@ impl RoundRobinScheduler {
             // in(reg) stack_frame.stack_segment,
             // out("rax") _
         );
-        self.current_task.context.rip = stack_frame.instruction_pointer.as_u64();
-        self.current_task.context.cs = stack_frame.code_segment;
-        self.current_task.context.rflags = stack_frame.cpu_flags;
-        self.current_task.context.rsp = stack_frame.stack_pointer.as_u64();
-        self.current_task.context.ss = stack_frame.stack_segment;
-        // println!("{:?}", self.current_task.context);
+        current_task.context.rip = stack_frame.instruction_pointer.as_u64();
+        current_task.context.cs = stack_frame.code_segment;
+        current_task.context.rflags = stack_frame.cpu_flags;
+        current_task.context.rsp = stack_frame.stack_pointer.as_u64();
+        current_task.context.ss = stack_frame.stack_segment;
+        // println!(
+        //     "{:?}",
+        //     self.tasks.get(&self.current_task_id).unwrap().context
+        // );
     }
 
     pub unsafe fn load_context(&self, stack_frame: &mut InterruptStackFrame) {
+        let current_task = self.tasks.get(&self.current_task_id).unwrap();
         // Needs to happen before otherwise the registers are already changed
         stack_frame.as_mut().write(InterruptStackFrameValue {
-            stack_segment: self.current_task.context.ss,
-            stack_pointer: VirtAddr::new(self.current_task.context.rsp),
-            cpu_flags: self.current_task.context.rflags,
-            code_segment: self.current_task.context.cs,
-            instruction_pointer: VirtAddr::new(self.current_task.context.rip),
+            stack_segment: current_task.context.ss,
+            stack_pointer: VirtAddr::new(current_task.context.rsp),
+            cpu_flags: current_task.context.rflags,
+            code_segment: current_task.context.cs,
+            instruction_pointer: VirtAddr::new(current_task.context.rip),
         });
+        // println!("{:?}", current_task.context);
         asm!(
             "mov rax, [{0} + 0]",
             "mov rbx, [{0} + 8]",
@@ -89,7 +140,8 @@ impl RoundRobinScheduler {
             "mov r13, [{0} + 96]",
             "mov r14, [{0} + 104]",
             "mov r15, [{0} + 112]",
-            in(reg) &self.current_task.context as *const _ as usize,
+            in(reg) &current_task.context as *const _ as usize,
         );
+        // println!("still standing");
     }
 }

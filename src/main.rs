@@ -8,10 +8,10 @@ extern crate alloc;
 
 use alloc::{boxed::Box, rc::Rc, vec, vec::Vec};
 use blog_os::{
-    memory, println,
-    task::{executor::Executor, Task, keyboard},
+    memory, println, scheduling::SCHEDULER, task::{executor::Executor, keyboard, Task}
 };
 use bootloader::{entry_point, BootInfo};
+use x86_64::{structures::paging::{page, Mapper, Page, PageTableFlags as Flags, PhysFrame, Size4KiB, FrameAllocator}, PhysAddr};
 use core::panic::PanicInfo;
 
 entry_point!(kernel_main);
@@ -21,8 +21,8 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use x86_64::VirtAddr;
 
     println!("Hello World{}", "!");
+    
     blog_os::init();
-
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
@@ -51,6 +51,17 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // );
     #[cfg(test)]
     test_main();
+
+    // let frame: PhysFrame<Size4KiB> = frame_allocator.allocate_frame().unwrap();
+    // let page: Page<Size4KiB> = Page::containing_address(VirtAddr::new(0x_8444_4444_0000));
+    // let flags = Flags::PRESENT | Flags::WRITABLE;
+    // let map_to_result = unsafe { mapper.map_to(page, frame, flags, &mut frame_allocator)};
+    // map_to_result.expect("map_to failed").flush();
+
+    SCHEDULER.lock().spawn(|| {
+        loop {
+        }
+    });
 
     let mut executor = Executor::new();
     executor.spawn(Task::new(example_task()));

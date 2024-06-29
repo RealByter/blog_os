@@ -1,5 +1,5 @@
 use crate::hlt_loop;
-use crate::scheduling::round_robin_scheduler::RoundRobinScheduler;
+use crate::scheduling::SCHEDULER;
 use crate::{gdt, print, println};
 use lazy_static::lazy_static;
 use pic8259::ChainedPics;
@@ -9,11 +9,6 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
-
-lazy_static! {
-    static ref SCHEDULER: spin::Mutex<RoundRobinScheduler> =
-        spin::Mutex::new(RoundRobinScheduler::init());
-}
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
@@ -83,7 +78,7 @@ extern "x86-interrupt" fn timer_interrupt_handler(mut stack_frame: InterruptStac
     let mut scheduler = SCHEDULER.lock();
     unsafe { scheduler.save_context(&stack_frame) }
     scheduler.schedule();
-    print!(".");
+    // print!(".");
     unsafe {scheduler.load_context(&mut stack_frame)};
     unsafe {
         PICS.lock()

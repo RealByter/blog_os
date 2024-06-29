@@ -1,9 +1,11 @@
 use core::sync::atomic::{AtomicU64, Ordering};
+use lazy_static::lazy_static;
+use round_robin_scheduler::RoundRobinScheduler;
 
 pub mod round_robin_scheduler;
 
 #[repr(C)]
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 struct TaskContext {
     rax: u64,
     rbx: u64,
@@ -38,6 +40,10 @@ impl TaskId {
 }
 
 struct Task {
-    id: TaskId,
     context: TaskContext,
+}
+
+lazy_static! {
+    pub static ref SCHEDULER: spin::Mutex<RoundRobinScheduler> =
+        spin::Mutex::new(RoundRobinScheduler::init());
 }
