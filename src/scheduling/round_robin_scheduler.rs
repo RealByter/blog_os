@@ -1,5 +1,3 @@
-use crate::{hlt_loop, println};
-
 use super::*;
 use core::arch::asm;
 use x86_64::{
@@ -66,15 +64,15 @@ impl RoundRobinScheduler {
         // println!("{:?}", self.current_task.context);
     }
 
-    pub unsafe fn load_context(&self) -> InterruptStackFrameValue {
+    pub unsafe fn load_context(&self, stack_frame: &mut InterruptStackFrame) {
         // Needs to happen before otherwise the registers are already changed
-        let ret_value = InterruptStackFrameValue {
+        stack_frame.as_mut().write(InterruptStackFrameValue {
             stack_segment: self.current_task.context.ss,
             stack_pointer: VirtAddr::new(self.current_task.context.rsp),
             cpu_flags: self.current_task.context.rflags,
             code_segment: self.current_task.context.cs,
             instruction_pointer: VirtAddr::new(self.current_task.context.rip),
-        };
+        });
         asm!(
             "mov rax, [{0} + 0]",
             "mov rbx, [{0} + 8]",
@@ -93,6 +91,5 @@ impl RoundRobinScheduler {
             "mov r15, [{0} + 112]",
             in(reg) &self.current_task.context as *const _ as usize,
         );
-        ret_value
     }
 }

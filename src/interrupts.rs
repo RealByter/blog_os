@@ -84,7 +84,7 @@ extern "x86-interrupt" fn timer_interrupt_handler(mut stack_frame: InterruptStac
     unsafe { scheduler.save_context(&stack_frame) }
     scheduler.schedule();
     print!(".");
-    unsafe {stack_frame.as_mut().write(scheduler.load_context())};
+    unsafe {scheduler.load_context(&mut stack_frame)};
     unsafe {
         PICS.lock()
             .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
